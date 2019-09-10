@@ -1,0 +1,10 @@
+# OS ignores
+.DS_Store
+Thumbs.DB
+
+# Vim ignores
+*.swp
+*.swo
+
+# Build ignores
+
