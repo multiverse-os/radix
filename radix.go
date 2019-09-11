@@ -1,8 +1,7 @@
 package radix
 
 import (
-	"fmt"
-	"strings"
+	tree "github.com/multiverse-os/cli/text/tree"
 )
 
 // Terminology
@@ -11,29 +10,37 @@ import (
 // Leaf: Terminal nodes at the edge of the tree object containing values
 // Branch: Inner nodes not containing values
 
-const fuzzyIterationLimit = 2
+// TODO:TASKS:
+///////////////////////////////////////////////////////////////////////////////
+// * Add subtree isolation and ability to run commands, so you can search,
+// iterate, delete, a subtree
+// * Ability to delete a key
+// * Track all edges
+// * Use levestian to improve functionality
+//
+//
 
 type Tree struct {
-	Root        *Node
-	Keys        []string
-	Edges       []*Node
-	Size        int
-	Depth       int
-	KeyCount    int
-	NodeCount   int // Total
-	LeafCount   int
-	BranchCount int
+	//Size      int // Byte Size
+	Root      *Node
+	Keys      [][]byte
+	Edges     []*Node
+	Height    int // Or MaxDepth
+	NodeCount int // Total
 }
 
 func New() *Tree {
 	return &Tree{
-		Root:        &Node{},
-		Keys:        []string{},
-		Edges:       []*Node{},
-		Size:        0,
-		Depth:       0,
-		LeafCount:   0,
-		BranchCount: 0,
+		Root: &Node{
+			Type:  Root,
+			key:   []byte{0},
+			Depth: -1,
+			Index: 0,
+		},
+		Keys:      [][]byte{},
+		Edges:     []*Node{},
+		Height:    0,
+		NodeCount: 0,
 	}
 }
 
@@ -41,7 +48,7 @@ func (self *Tree) FuzzySearch(query string) ([]string, []interface{}) {
 	if len(self.Root.Children()) == 0 || query == "" {
 		return []string{}, []interface{}{}
 	}
-	return self.fuzzySearch(self.keyToBytes(query),
+	return self.fuzzySearch(self.byteKey(query),
 		self.Root,
 		0,
 		0,
@@ -91,7 +98,7 @@ func (self *Tree) PrefixSearch(query string) ([]string, []interface{}) {
 		return []string{}, []interface{}{}
 	}
 	// TODO: Node and prefix decladed and not used...
-	node, prefix, ok := self.prefixSearch(self.keyToBytes(query), self.Root, 0, []byte{})
+	node, prefix, ok := self.prefixSearch(self.byteKey(query), self.Root, 0, []byte{})
 	if !ok {
 		return []string{}, []interface{}{}
 	}
@@ -160,24 +167,52 @@ func (self *Tree) collect(node *Node, prefix []byte) ([]string, []interface{}) {
 		return keys, values
 	}
 
-	// Recursively append
 	for _, child := range node.Children() {
 		keys = append(keys, string(child.Key()))
 		values = append(values, child.Value)
 	}
-
 	return keys, values
+}
+
+func (self *Tree) Remove(key string) (bool, error) {
+	// 1) Look up node
+	// 2) Remove node
+	// 3) Cleanup edges if it was edge
+	// 4) Fix counts
+	return false, nil
+}
+
+func (self *Tree) CacheKey(key []byte) {
+	if len(key) > 0 {
+		self.Keys = append(self.Keys, key)
+		self.NodeCount = len(self.Keys)
+	}
+}
+
+func (self *Tree) CacheEdge(node *Node) {
+	if node.Value != nil {
+		self.Edges = append(self.Edges, node)
+		node.Type = Edge
+	}
 }
 
 func (self *Tree) Add(key string, value interface{}) *Node {
 	if key == "" {
 		return &Node{}
 	}
-	input := self.keyToBytes(key)
+	input := self.byteKey(key)
 	bitMask := genBitMask(input)
+
 	leaf := self.add(self.Root, input, bitMask, 0)
-	self.KeyCount++
+
 	leaf.Value = value
+	self.CacheEdge(leaf)
+	self.CacheKey(leaf.Key())
+
+	if leaf.Parent() == nil {
+		leaf.Depth = 0
+		leaf.parent = self.Root
+	}
 	return leaf
 }
 
@@ -185,8 +220,8 @@ func (self *Tree) add(node *Node, input []byte, bitMask uint32, depth int) *Node
 	if len(input) == 0 {
 		return node
 	} else if len(node.Children()) == 0 {
-		self.NodeCount++
-		return node.NewChild(input)
+		newChild := node.NewChild(input)
+		self.CacheKey(newChild.Key())
 	}
 
 	for childIndex, child := range node.Children() {
@@ -201,6 +236,7 @@ func (self *Tree) add(node *Node, input []byte, bitMask uint32, depth int) *Node
 			}
 
 			childbyte := child.Key()[i : i+1][0]
+
 			if childbyte == inputbyte {
 				child.OrBitMask(genBitMask(input[i:]))
 				if i+1 == len(child.Key()) {
@@ -210,64 +246,46 @@ func (self *Tree) add(node *Node, input []byte, bitMask uint32, depth int) *Node
 				}
 			} else {
 				if i > 0 {
-					self.NodeCount++
-					child.Break(i)
+					// NOTE: This fixed the issue with the first node breaking
+					child.Value = node.Value
+					child.SplitNode(i)
+
 					if len(input[i:]) > 0 {
-						self.NodeCount++
 						newNode := child.NewChild(input[i:])
+						self.CacheKey(newNode.Key())
+
 						return newNode
 					} else {
-						// If the break is less than the input then
-						// return the child (which is the parent of any
-						// new child)
 						return child
 					}
 				} else {
-					// If there are more nodes to be seen, continue
 					if childIndex+1 < len(node.Children()) {
 						break
 					}
 
-					// If it's the first letter, just insert to node
-					// (not child)
-					self.NodeCount++
 					newNode := node.NewChild(input[i:])
+					self.CacheKey(newNode.Key())
 					return newNode
 				}
 			}
 		}
 	}
+	//fmt.Println("Node: bottom ", string(node.Key()), "]")
 	return node
 }
 
 func (self *Tree) String() string {
-	output := "\n"
-	first := true
+	tree := tree.New()
 
-	self.Root.WalkDepthFirst(
-		func(node *Node, depth int, firstAtDepth bool, lastAtDepth bool, numChildren int) terminate {
+	//tree.AddNode(fmt.Sprintf("['LEAF':{'key':'%s', 'value':'%v'}]", string(node.Key()), node.Value))
+	//tree.AddNode(fmt.Sprintf("[{'key':'%s'}]", string(node.Key())))
 
-			if !first && firstAtDepth {
-				output += strings.Repeat(" ", (depth*3)-3) + "|\n"
-			}
-			if depth > 0 {
-				output += strings.Repeat(" ", (depth*3)-3) + "+- "
-			}
-			if node.Value != nil {
-				output += fmt.Sprintf("key=[%s] value=[%v]\n", string(node.Key()), node.Value)
-			} else {
-				output += fmt.Sprintf("key=[%s]\n", string(node.Key()))
-			}
-
-			first = false
-			return terminate(false)
-		}, 0)
-	return output
+	return tree.String()
 }
 
 // Because we're converting from utf8 down, we'll max out at 255 on the
 // letter's value as to not overflow a byte
-func (self *Tree) keyToBytes(key string) []byte {
+func (self *Tree) byteKey(key string) []byte {
 	bytes := make([]byte, len(key))
 	for i, letter := range key {
 		if letter < rune(255) {
