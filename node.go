@@ -3,7 +3,7 @@ package radix
 import "errors"
 
 type terminate bool
-type walkerFunc func([]byte, int, bool, bool, int) terminate
+type walkerFunc func(*Node, int, bool, bool, int) terminate
 
 // The all-important building block
 // The child bytes is a bit map where 0-26 is A-Z and 27 - 32 is squashed into 0-9
@@ -75,6 +75,7 @@ func (self *Node) WalkDepthFirst(walk walkerFunc, depth int) {
 		childCount := len(childNode.Children())
 
 		isLast = (i == currentChildCount-1)
+		// TODO: Is this isFirst and isLast required because it seems clunky
 		stop := walk(childNode, depth, isFirst, isLast, childCount)
 
 		isFirst = false

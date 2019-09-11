@@ -253,7 +253,11 @@ func (self *Tree) String() string {
 			if depth > 0 {
 				output += strings.Repeat(" ", (depth*3)-3) + "+- "
 			}
-			output += fmt.Sprintf("[%s]\n", string(node.Key()))
+			if node.Value != nil {
+				output += fmt.Sprintf("key=[%s] value=[%v]\n", string(node.Key()), node.Value)
+			} else {
+				output += fmt.Sprintf("key=[%s]\n", string(node.Key()))
+			}
 
 			first = false
 			return terminate(false)
