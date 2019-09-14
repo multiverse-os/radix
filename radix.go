@@ -1,6 +1,8 @@
 package radix
 
 import (
+	"sync"
+
 	tree "github.com/multiverse-os/cli/text/tree"
 )
 
@@ -19,9 +21,14 @@ import (
 // * Use levestian to improve functionality
 //
 //
+// Clone makes a copy of an existing trie.
+// Items stored in both tries become shared, obviously.
+
+// VisitSubtree works much like Visit, but it only visits nodes matching prefix.
 
 type Tree struct {
 	//Size      int // Byte Size
+	mutex     *sync.RWMutex
 	Root      *Node
 	Keys      [][]byte
 	Edges     []*Node
@@ -33,7 +40,7 @@ func New() *Tree {
 	return &Tree{
 		Root: &Node{
 			Type:  Root,
-			key:   []byte{0},
+			key:   []byte{0x0},
 			Depth: -1,
 			Index: 0,
 		},
@@ -197,6 +204,9 @@ func (self *Tree) CacheEdge(node *Node) {
 }
 
 func (self *Tree) Add(key string, value interface{}) *Node {
+	defer self.mu.Unlock()
+	self.mu.Lock()
+
 	if key == "" {
 		return &Node{}
 	}
@@ -281,16 +291,4 @@ func (self *Tree) String() string {
 	//tree.AddNode(fmt.Sprintf("[{'key':'%s'}]", string(node.Key())))
 
 	return tree.String()
-}
-
-// Because we're converting from utf8 down, we'll max out at 255 on the
-// letter's value as to not overflow a byte
-func (self *Tree) byteKey(key string) []byte {
-	bytes := make([]byte, len(key))
-	for i, letter := range key {
-		if letter < rune(255) {
-			bytes[i] = uint8(letter)
-		}
-	}
-	return bytes
 }

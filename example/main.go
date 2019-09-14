@@ -22,7 +22,7 @@ func main() {
 	//tree.Add("rubicon", 44)
 	//tree.Add("rubicundus", 71)
 
-	//fmt.Printf("%s", tree.String())
+	fmt.Printf("%s", tree.String())
 
 	nodes := tree.Root.Walk()
 	fmt.Println("nodes:", nodes)

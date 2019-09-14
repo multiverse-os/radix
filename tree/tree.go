@@ -5,18 +5,20 @@ import (
 	"fmt"
 	"io"
 	"reflect"
+
+	color "github.com/multiverse-os/cli/text/ansi/color"
 )
 
 type EdgeType string
 
 var (
-	EdgeTypeLink EdgeType = "│"
-	EdgeTypeMid  EdgeType = "├──"
-	EdgeTypeEnd  EdgeType = "└──"
+	EdgeTypeLink EdgeType = color.White("│")
+	EdgeTypeMid  EdgeType = color.White("├──")
+	EdgeTypeEnd  EdgeType = color.White("└──")
 )
 
 func New() Tree {
-	return &node{Value: "."}
+	return &node{Value: color.SkyBlue(".")}
 }
 
 type node struct {

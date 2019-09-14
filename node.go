@@ -55,11 +55,29 @@ type Node struct {
 // is that this allows them to essentially be read-only, which becomes more
 // important when dealing with pointers.
 func (self *Node) Key() []byte                      { return self.key }
+func (self *Node) StringKey() string                { return string(self.key) }
 func (self *Node) Parent() *Node                    { return self.parent }
 func (self *Node) Children() []*Node                { return self.children }
 func (self *Node) OrBitMask(bitMask uint32)         { self.bitMask |= bitMask }
 func (self *Node) IsBitMaskSet(bitMask uint32) bool { return bitMaskContains(self.bitMask, bitMask) }
 func (self *Node) BitMask() uint32                  { return self.bitMask }
+
+type ByteKeys []string
+
+func (self ByteKeys) Len() int           { return len(self) }
+func (self ByteKeys) Swap(i, j int)      { self[i], self[j] = self[j], self[i] }
+func (self ByteKeys) Less(i, j int) bool { return len(self[i]) < len(self[j]) }
+
+// TODO: With this do we need the bitmask functions above?
+func (self *Node) ByteKey() (bytes []byte) {
+	bytes = make([]byte, len(self.Key()))
+	for i, character := range bytes {
+		if character < rune(255) {
+			bytes[i] = uint8(character)
+		}
+	}
+	return bytes
+}
 
 func NewNode(key []byte, value interface{}) *Node {
 	return &Node{
@@ -88,8 +106,8 @@ func (self *Node) SplitNode(index int) (*Node, error) {
 
 	prefixKey := self.Key()[:index]
 	suffixKey := self.Key()[index:]
-	fmt.Println("prefixKey:", string(prefixKey))
-	fmt.Println("suffixKey:", string(suffixKey))
+	//fmt.Println("prefixKey:", string(prefixKey))
+	//fmt.Println("suffixKey:", string(suffixKey))
 	value := self.Value
 	children := self.Children()
 
