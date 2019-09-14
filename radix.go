@@ -43,7 +43,6 @@ func New() *Tree {
 		Root: &Node{
 			Type:     Branch,
 			Depth:    -1,
-			Index:    0,
 			children: []*Node{},
 		},
 		mutex:     new(sync.RWMutex),
@@ -66,10 +65,16 @@ func (self *Tree) Add(key string, value interface{}) *Node {
 
 	node := self.Root.add(key, value)
 
-	if node != nil && len(node.children) == 0 {
-		node.Type = Edge
-		if self.Height < node.Depth {
-			self.Height = node.Depth
+	if node != nil {
+		if len(node.children) == 0 {
+			node.Type = Edge
+			if self.Height < node.Depth {
+				self.Height = node.Depth
+			}
+		} else {
+			for _, child := range node.children {
+				child.Depth = child.parent.Depth + 1
+			}
 		}
 	}
 	return node
@@ -77,10 +82,7 @@ func (self *Tree) Add(key string, value interface{}) *Node {
 
 // TODO: Remaining issues:
 // 1) Doesn't properly set depth in complex edge cases
-// 2) Doesn't always set Edge correctly
-// 3) If a key has items below it, the key gets stored as "" below itself.
 func (self *Node) add(key string, value interface{}) *Node {
-	//fmt.Println("Merging in key:", key)
 	if len(self.children) != 0 {
 		for _, child := range self.children {
 			commonPrefixIndex := longestCommonPrefixIndex(child.key, key)
@@ -92,9 +94,17 @@ func (self *Node) add(key string, value interface{}) *Node {
 				} else if len(child.key) == commonPrefixIndex {
 					return child.add(key[commonPrefixIndex:], value)
 				}
-				return child.AddChild(key[commonPrefixIndex:], value)
+				if len(key) == commonPrefixIndex {
+					child.Value = value
+					return child
+				} else {
+					return child.AddChild(key[commonPrefixIndex:], value)
+				}
 			}
 		}
+	}
+	if self.parent != nil {
+		self.Depth = self.parent.Depth + 1
 	}
 	return self.AddChild(key, value)
 }

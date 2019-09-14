@@ -33,8 +33,7 @@ func (self NodeType) String() string {
 
 type Node struct {
 	Type     NodeType
-	Index    int // x coord system
-	Depth    int // y
+	Depth    int
 	key      string
 	parent   *Node
 	children []*Node
@@ -79,14 +78,19 @@ func (self *Node) SplitKeyAtIndex(index int) *Node {
 	self.key = prefixKey
 	self.Value = nil
 	self.children = []*Node{}
+	self.Depth = self.parent.Depth + 1
 	fmt.Println("self.key:", self.key)
 
 	child := self.AddChild(suffixKey, value)
+
 	child.children = children
-	for _, c := range children {
-		c.Depth += 1
-		if len(c.children) == 0 {
-			c.Type = Edge
+	if len(child.children) == 0 {
+		child.Type = Edge
+	} else {
+		for _, c := range children {
+			fmt.Println("c.key:", c.key)
+			fmt.Println("c.Depth:", c.Depth)
+			c.Depth = c.parent.Depth + 1
 		}
 	}
 	child.Value = value
@@ -105,16 +109,14 @@ func (self *Node) Walk() (nodes []*Node) {
 }
 
 func (self *Node) String() string {
-	return fmt.Sprintf("["+self.Type.String()+"][key='"+string(self.key)+"', value='%v'][depth='%v'][index='%v']", self.Value, self.Depth, self.Index)
+	return fmt.Sprintf("["+self.Type.String()+"][key='"+string(self.key)+"', value='%v'][depth='%v']", self.Value, self.Depth)
 }
 
 func (self *Node) JSON() string {
 	return fmt.Sprintf(`{
-	'type':`+self.Type.String()+`',
-	'depth':`+strconv.Itoa(self.Depth)+`',
-	'key':`+string(self.key)+`',
+	'type':` + self.Type.String() + `',
+	'depth':` + strconv.Itoa(self.Depth) + `',
+	'key':` + string(self.key) + `',
 	'value': '%v',
-	'parent_key':`+string(self.parent.key)+`',
-	'children_count':`+strconv.Itoa(len(self.children))+`',
-}`, self.Value)
+}`)
 }
