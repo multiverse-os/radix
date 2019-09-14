@@ -1,7 +1,6 @@
 package radix
 
 import (
-	"errors"
 	"fmt"
 	"strconv"
 )
@@ -19,48 +18,28 @@ type terminate bool
 type NodeType int
 
 const (
-	Root NodeType = iota
+	Branch NodeType = iota
 	Edge
-	Connector
 )
 
 func (self NodeType) String() string {
 	switch self {
-	case Root:
-		return "root"
 	case Edge:
 		return "edge"
-	case Connector:
-		return "connector"
-	default:
-		return ""
+	default: // Branch
+		return "branch"
 	}
 }
 
-// The all-important building block
-// The child bytes is a bit map where 0-26 is A-Z and 27 - 32 is squashed into 0-9
-// bitmask: Should probably be renamed to reflect that it is bytes version of key
 type Node struct {
 	Type     NodeType
 	Index    int // x coord system
 	Depth    int // y
-	key      []byte
-	bitMask  uint32
+	key      string
 	parent   *Node
 	children []*Node
 	Value    interface{}
 }
-
-// NOTE: The benefit of doing this instead of just making the variables public
-// is that this allows them to essentially be read-only, which becomes more
-// important when dealing with pointers.
-func (self *Node) Key() []byte                      { return self.key }
-func (self *Node) StringKey() string                { return string(self.key) }
-func (self *Node) Parent() *Node                    { return self.parent }
-func (self *Node) Children() []*Node                { return self.children }
-func (self *Node) OrBitMask(bitMask uint32)         { self.bitMask |= bitMask }
-func (self *Node) IsBitMaskSet(bitMask uint32) bool { return bitMaskContains(self.bitMask, bitMask) }
-func (self *Node) BitMask() uint32                  { return self.bitMask }
 
 type ByteKeys []string
 
@@ -68,97 +47,74 @@ func (self ByteKeys) Len() int           { return len(self) }
 func (self ByteKeys) Swap(i, j int)      { self[i], self[j] = self[j], self[i] }
 func (self ByteKeys) Less(i, j int) bool { return len(self[i]) < len(self[j]) }
 
-// TODO: With this do we need the bitmask functions above?
-func (self *Node) ByteKey() (bytes []byte) {
-	bytes = make([]byte, len(self.Key()))
-	for i, character := range bytes {
-		if character < rune(255) {
-			bytes[i] = uint8(character)
-		}
-	}
-	return bytes
-}
-
-func NewNode(key []byte, value interface{}) *Node {
+func NewNode(key string, value interface{}) *Node {
 	return &Node{
-		bitMask: genBitMask(key),
-		key:     key,
-		Value:   value,
+		key:   key,
+		Value: value,
 	}
 }
 
-func (self *Node) NewChild(key []byte) *Node {
+func (self *Node) AddChild(key string, value interface{}) *Node {
 	child := &Node{
-		key:     key,
-		parent:  self,
-		Depth:   (self.Depth + 1),
-		bitMask: genBitMask(key),
+		key:      key,
+		Value:    value,
+		children: []*Node{},
+		parent:   self,
+		Depth:    (self.Depth + 1),
 	}
 	self.children = append(self.children, child)
+	if len(self.children) != 0 {
+		self.Type = Branch
+	}
 	return child
 }
 
 // NOTE: This breaks up the keys as new children are added
-func (self *Node) SplitNode(index int) (*Node, error) {
-	if index > len(self.Key()) {
-		return nil, errors.New("Index exceeds key length")
-	}
-
-	prefixKey := self.Key()[:index]
-	suffixKey := self.Key()[index:]
-	//fmt.Println("prefixKey:", string(prefixKey))
-	//fmt.Println("suffixKey:", string(suffixKey))
+func (self *Node) SplitKeyAtIndex(index int) *Node {
+	prefixKey := self.key[:index]
+	suffixKey := self.key[index:]
 	value := self.Value
-	children := self.Children()
+	children := self.children
 
-	// Set the vars, move children and add the child
-	// TODO: This should be mostly put inside of a newChild like function
 	self.key = prefixKey
 	self.Value = nil
-	self.Type = Connector
-	self.children = make([]*Node, 0)
+	self.children = []*Node{}
+	fmt.Println("self.key:", self.key)
 
-	child := self.NewChild(suffixKey)
-	child.parent = self
+	child := self.AddChild(suffixKey, value)
 	child.children = children
-	child.Value = value
-	child.Type = Edge
-
-	// Rebuild the child bit mask (contain itself and it's children)
-	child.OrBitMask(genBitMask(child.Key()))
-	for _, childsChild := range child.Children() {
-		child.OrBitMask(childsChild.BitMask())
+	for _, c := range children {
+		c.Depth += 1
+		if len(c.children) == 0 {
+			c.Type = Edge
+		}
 	}
-
-	self.OrBitMask(genBitMask(suffixKey))
-
-	return self, nil
+	child.Value = value
+	return child
 }
 
 func (self *Node) Walk() (nodes []*Node) {
 	nodes = []*Node{self}
-	for _, child := range self.Children() {
+	for _, child := range self.children {
 		nodes = append(nodes, child)
-		fmt.Println("added node:", string(child.Key()))
-		if child.Type == Connector {
+		if child.Type == Branch {
 			nodes = append(nodes, child.Walk()...)
 		}
 	}
-	fmt.Println("[radix] found [", len(nodes), "] nodes in the tree")
 	return nodes
 }
 
 func (self *Node) String() string {
-	return fmt.Sprintf("["+self.Type.String()+"][key='"+string(self.Key())+"', value='%v']", self.Value)
+	return fmt.Sprintf("["+self.Type.String()+"][key='"+string(self.key)+"', value='%v'][depth='%v'][index='%v']", self.Value, self.Depth, self.Index)
 }
 
 func (self *Node) JSON() string {
 	return fmt.Sprintf(`{
 	'type':`+self.Type.String()+`',
 	'depth':`+strconv.Itoa(self.Depth)+`',
-	'key':`+string(self.Key())+`',
+	'key':`+string(self.key)+`',
 	'value': '%v',
-	'parent_key':`+string(self.parent.Key())+`',
+	'parent_key':`+string(self.parent.key)+`',
 	'children_count':`+strconv.Itoa(len(self.children))+`',
 }`, self.Value)
 }

@@ -1,6 +1,7 @@
 package radix
 
 import (
+	"fmt"
 	"sync"
 
 	tree "github.com/multiverse-os/cli/text/tree"
@@ -30,8 +31,9 @@ type Tree struct {
 	//Size      int // Byte Size
 	mutex     *sync.RWMutex
 	Root      *Node
-	Keys      [][]byte
+	Keys      []string
 	Edges     []*Node
+	Nodes     []*Node
 	Height    int // Or MaxDepth
 	NodeCount int // Total
 }
@@ -39,253 +41,105 @@ type Tree struct {
 func New() *Tree {
 	return &Tree{
 		Root: &Node{
-			Type:  Root,
-			key:   []byte{0x0},
-			Depth: -1,
-			Index: 0,
+			Type:     Branch,
+			Depth:    -1,
+			Index:    0,
+			children: []*Node{},
 		},
-		Keys:      [][]byte{},
+		mutex:     new(sync.RWMutex),
+		Keys:      []string{},
 		Edges:     []*Node{},
 		Height:    0,
 		NodeCount: 0,
 	}
 }
 
-func (self *Tree) FuzzySearch(query string) ([]string, []interface{}) {
-	if len(self.Root.Children()) == 0 || query == "" {
-		return []string{}, []interface{}{}
-	}
-	return self.fuzzySearch(self.byteKey(query),
-		self.Root,
-		0,
-		0,
-		0,
-		[]byte{})
-}
-
-func (self *Tree) fuzzySearch(query []byte, node *Node, index int, iteration int, lastIncrement int, found []byte) ([]string, []interface{}) {
-	searchBitMask := genBitMask(query[index:])
-
-	if len(node.Children()) == 0 {
-		return []string{}, []interface{}{}
-	}
-
-	startIndex := index
-	for _, child := range node.Children() {
-		// Reset index for each iteration of the child
-		index = startIndex
-		// If this is the case, then somewhere inside the depth of this
-		// node there MIGHT exist what we're looking for, or it could
-		// be shallow
-		if child.IsBitMaskSet(searchBitMask) {
-			// Iterate letters
-			for _, letter := range child.Key() {
-				if index < len(query) {
-					if letter == query[index] {
-						lastIncrement = iteration
-						index++
-					}
-					// Small optimization, break early
-					if index >= len(query) {
-						break
-					}
-				}
-				iteration++
-			}
-		} else {
-			// Not set, can't do anything here really
-			continue
-		}
-	}
-	return nil, nil
-}
-
-func (self *Tree) PrefixSearch(query string) ([]string, []interface{}) {
-	if len(self.Root.Children()) == 0 {
-		return []string{}, []interface{}{}
-	}
-	// TODO: Node and prefix decladed and not used...
-	node, prefix, ok := self.prefixSearch(self.byteKey(query), self.Root, 0, []byte{})
-	if !ok {
-		return []string{}, []interface{}{}
-	}
-	return []string{string(prefix)}, []interface{}{node.Value}
-}
-
-func (self *Tree) LongestPrefix(query string) (string, bool) {
-	if len(self.Root.Children()) == 0 {
-		return "", false
-	}
-
-	ok := false
-
-	_, prefix, _ := self.prefixSearch(
-		[]byte(query),
-		self.Root,
-		0,
-		[]byte{})
-
-	ok = (len(prefix) > 0)
-
-	return string(prefix), ok
-}
-
-// Recursively prefix-searches to find the longest prefix that exists
-func (self *Tree) prefixSearch(query []byte, node *Node, index int, found []byte) (*Node, []byte, bool) {
-	if index+1 > len(query) {
-		return node, found, true
-	} else if len(node.Children()) == 0 {
-		return node, found, false
-	}
-
-	for _, child := range node.Children() {
-		lettersFound := 0
-		searchLetter := query[index]
-
-		for _, letter := range child.Key() {
-			// A matching letter has been found
-			if searchLetter == letter {
-				lettersFound++
-				// Otherwise recurse
-				if (index+lettersFound) >= len(query) || len(child.Key()) == lettersFound {
-					newIndex := index + len(child.Key())
-					toAppend := child.Key()
-					return self.prefixSearch(query, child, newIndex, append(found, toAppend...))
-				}
-				if index+lettersFound < len(query) {
-					searchLetter = query[index+lettersFound]
-					return child, child.Key(), false
-				}
-			} else {
-				break
-			}
-		}
-	}
-	return nil, []byte{}, false
-}
-
-// The collection will, starting from a given node, recurse and generate
-// strings from every leaf
-func (self *Tree) collect(node *Node, prefix []byte) ([]string, []interface{}) {
-	keys := []string{string(prefix)}
-	values := []interface{}{node.Value}
-
-	if len(node.Children()) == 0 {
-		return keys, values
-	}
-
-	for _, child := range node.Children() {
-		keys = append(keys, string(child.Key()))
-		values = append(values, child.Value)
-	}
-	return keys, values
-}
-
-func (self *Tree) Remove(key string) (bool, error) {
-	// 1) Look up node
-	// 2) Remove node
-	// 3) Cleanup edges if it was edge
-	// 4) Fix counts
-	return false, nil
-}
-
-func (self *Tree) CacheKey(key []byte) {
-	if len(key) > 0 {
-		self.Keys = append(self.Keys, key)
-		self.NodeCount = len(self.Keys)
-	}
-}
-
-func (self *Tree) CacheEdge(node *Node) {
-	if node.Value != nil {
-		self.Edges = append(self.Edges, node)
-		node.Type = Edge
-	}
-}
-
 func (self *Tree) Add(key string, value interface{}) *Node {
-	defer self.mu.Unlock()
-	self.mu.Lock()
-
 	if key == "" {
 		return &Node{}
 	}
-	input := self.byteKey(key)
-	bitMask := genBitMask(input)
+	self.mutex.Lock()
+	defer self.mutex.Unlock()
 
-	leaf := self.add(self.Root, input, bitMask, 0)
+	fmt.Println("tree:", self.String())
+	fmt.Println("root children?:", len(self.Root.children))
 
-	leaf.Value = value
-	self.CacheEdge(leaf)
-	self.CacheKey(leaf.Key())
+	node := self.Root.add(key, value)
 
-	if leaf.Parent() == nil {
-		leaf.Depth = 0
-		leaf.parent = self.Root
+	if node != nil && len(node.children) == 0 {
+		node.Type = Edge
+		if self.Height < node.Depth {
+			self.Height = node.Depth
+		}
 	}
-	return leaf
+	return node
 }
 
-func (self *Tree) add(node *Node, input []byte, bitMask uint32, depth int) *Node {
-	if len(input) == 0 {
-		return node
-	} else if len(node.Children()) == 0 {
-		newChild := node.NewChild(input)
-		self.CacheKey(newChild.Key())
-	}
-
-	for childIndex, child := range node.Children() {
-		for i := 0; i < len(child.Key()); i++ {
-			if i > len(input) {
-				break
-			}
-
-			var inputbyte byte
-			if i+1 <= len(input) {
-				inputbyte = input[i : i+1][0]
-			}
-
-			childbyte := child.Key()[i : i+1][0]
-
-			if childbyte == inputbyte {
-				child.OrBitMask(genBitMask(input[i:]))
-				if i+1 == len(child.Key()) {
-					if len(child.Children()) > 0 {
-						return self.add(child, input[i+1:], bitMask, depth+1)
-					}
+// TODO: Remaining issues:
+// 1) Doesn't properly set depth in complex edge cases
+// 2) Doesn't always set Edge correctly
+// 3) If a key has items below it, the key gets stored as "" below itself.
+func (self *Node) add(key string, value interface{}) *Node {
+	//fmt.Println("Merging in key:", key)
+	if len(self.children) != 0 {
+		for _, child := range self.children {
+			commonPrefixIndex := longestCommonPrefixIndex(child.key, key)
+			if commonPrefixIndex == -1 {
+				continue
+			} else if commonPrefixIndex > 0 {
+				if len(child.key) > commonPrefixIndex {
+					child.SplitKeyAtIndex(commonPrefixIndex)
+				} else if len(child.key) == commonPrefixIndex {
+					return child.add(key[commonPrefixIndex:], value)
 				}
-			} else {
-				if i > 0 {
-					// NOTE: This fixed the issue with the first node breaking
-					child.Value = node.Value
-					child.SplitNode(i)
-
-					if len(input[i:]) > 0 {
-						newNode := child.NewChild(input[i:])
-						self.CacheKey(newNode.Key())
-
-						return newNode
-					} else {
-						return child
-					}
-				} else {
-					if childIndex+1 < len(node.Children()) {
-						break
-					}
-
-					newNode := node.NewChild(input[i:])
-					self.CacheKey(newNode.Key())
-					return newNode
-				}
+				return child.AddChild(key[commonPrefixIndex:], value)
 			}
 		}
 	}
-	//fmt.Println("Node: bottom ", string(node.Key()), "]")
-	return node
+	return self.AddChild(key, value)
 }
 
 func (self *Tree) String() string {
 	tree := tree.New()
+
+	fmt.Println("Height of the tree is:", self.Height)
+	fmt.Println("children of root node:", len(self.Root.children))
+	for _, node := range self.Root.children {
+		if node.Type == Edge {
+			tree.AddNode(node)
+		} else {
+			branch := tree.AddBranch(node)
+			for _, child := range node.children {
+				if child.Type == Edge {
+					branch.AddNode(child)
+				} else {
+					subbranch := branch.AddBranch(child)
+					for _, subchild := range child.children {
+						if subchild.Type == Edge {
+							subbranch.AddNode(subchild)
+						} else {
+							subsubbranch := subbranch.AddBranch(subchild)
+							for _, subsubchild := range subchild.children {
+								if subsubchild.Type == Edge {
+									subsubbranch.AddNode(subsubchild)
+								} else {
+									subsubsubbranch := subsubbranch.AddBranch(subsubchild)
+									for _, subsubsubchild := range subsubchild.children {
+										if subsubsubchild.Type == Edge {
+											subsubsubbranch.AddNode(subsubsubchild)
+										} else {
+											subsubsubbranch.AddBranch(subsubsubchild)
+										}
+									}
+								}
+							}
+						}
+					}
+				}
+			}
+		}
+	}
+	//}
 
 	//tree.AddNode(fmt.Sprintf("['LEAF':{'key':'%s', 'value':'%v'}]", string(node.Key()), node.Value))
 	//tree.AddNode(fmt.Sprintf("[{'key':'%s'}]", string(node.Key())))
