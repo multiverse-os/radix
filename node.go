@@ -34,9 +34,9 @@ func (self NodeType) String() string {
 type Node struct {
 	Type     NodeType
 	Depth    int
-	key      string
-	parent   *Node
-	children []*Node
+	Key      string
+	Parent   *Node
+	Children []*Node
 	Value    interface{}
 }
 
@@ -48,49 +48,68 @@ func (self ByteKeys) Less(i, j int) bool { return len(self[i]) < len(self[j]) }
 
 func NewNode(key string, value interface{}) *Node {
 	return &Node{
-		key:   key,
+		Key:   key,
 		Value: value,
 	}
 }
 
+func (self *Node) Ancestor(depth int) *Node {
+	node := self
+	for i := 0; i < depth; i++ {
+		if node.Parent != nil {
+			node = node.Parent
+		} else {
+			break
+		}
+	}
+	return node
+}
+
+// TODO: This revealed that some of the more complex keys are not getting
+// working. Its showing up in the tree output, but the parents are not correct
+// and so rebuilding the full key leaves out the middle node of examples like
+// "romul" and just ends up being "rul" because its missing "om"
+func (self *Node) FullKey() (fullKey []string) {
+	for i := (self.Depth + 1); i >= 0; i-- {
+		fullKey = append(fullKey, self.Ancestor(i).Key)
+	}
+	return fullKey
+}
+
 func (self *Node) AddChild(key string, value interface{}) *Node {
 	child := &Node{
-		key:      key,
+		Key:      key,
 		Value:    value,
-		children: []*Node{},
-		parent:   self,
+		Children: []*Node{},
+		Parent:   self,
 		Depth:    (self.Depth + 1),
 	}
-	self.children = append(self.children, child)
-	if len(self.children) != 0 {
+	self.Children = append(self.Children, child)
+	if len(self.Children) != 0 {
 		self.Type = Branch
 	}
 	return child
 }
 
-// NOTE: This breaks up the keys as new children are added
+// NOTE: This breaks up the keys as new Children are added
 func (self *Node) SplitKeyAtIndex(index int) *Node {
-	prefixKey := self.key[:index]
-	suffixKey := self.key[index:]
+	prefixKey := self.Key[:index]
+	suffixKey := self.Key[index:]
 	value := self.Value
-	children := self.children
+	children := self.Children
 
-	self.key = prefixKey
+	self.Key = prefixKey
 	self.Value = nil
-	self.children = []*Node{}
-	self.Depth = self.parent.Depth + 1
-	fmt.Println("self.key:", self.key)
-
+	self.Children = []*Node{}
+	self.Depth = self.Parent.Depth + 1
 	child := self.AddChild(suffixKey, value)
 
-	child.children = children
-	if len(child.children) == 0 {
+	child.Children = children
+	if len(child.Children) == 0 {
 		child.Type = Edge
 	} else {
 		for _, c := range children {
-			fmt.Println("c.key:", c.key)
-			fmt.Println("c.Depth:", c.Depth)
-			c.Depth = c.parent.Depth + 1
+			c.Depth = c.Parent.Depth + 1
 		}
 	}
 	child.Value = value
@@ -99,7 +118,7 @@ func (self *Node) SplitKeyAtIndex(index int) *Node {
 
 func (self *Node) Walk() (nodes []*Node) {
 	nodes = []*Node{self}
-	for _, child := range self.children {
+	for _, child := range self.Children {
 		nodes = append(nodes, child)
 		if child.Type == Branch {
 			nodes = append(nodes, child.Walk()...)
@@ -109,14 +128,14 @@ func (self *Node) Walk() (nodes []*Node) {
 }
 
 func (self *Node) String() string {
-	return fmt.Sprintf("["+self.Type.String()+"][key='"+string(self.key)+"', value='%v'][depth='%v']", self.Value, self.Depth)
+	return fmt.Sprintf("["+self.Type.String()+"][FullKey='"+string(self.Key)+"'][Key='"+string(self.Key)+"', value='%v'][depth='%v']", self.Value, self.Depth)
 }
 
 func (self *Node) JSON() string {
 	return fmt.Sprintf(`{
-	'type':` + self.Type.String() + `',
-	'depth':` + strconv.Itoa(self.Depth) + `',
-	'key':` + string(self.key) + `',
+	'Type':` + self.Type.String() + `',
+	'Depth':` + strconv.Itoa(self.Depth) + `',
+	'Key':` + string(self.Key) + `',
 	'value': '%v',
 }`)
 }

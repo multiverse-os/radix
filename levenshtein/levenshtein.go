@@ -14,22 +14,20 @@ func NewLevenshtein(size int) *Levenshtein {
 	}
 }
 
-func (l *Levenshtein) Calculate(s, t string) int {
+func (self *Levenshtein) Calculate(s, t string) int {
 	if len(s) == 0 {
 		return len(t)
-	}
-	if len(t) == 0 {
+	} else if len(t) == 0 {
 		return len(s)
 	}
 
 	m, n := len(s), len(t)
-	v0 := l.sourceBuffer[:n+1]
-	v1 := l.targetBuffer[:n+1]
+	v0 := self.sourceBuffer[:n+1]
+	v1 := self.targetBuffer[:n+1]
 
 	for i := 0; i < n; i++ {
 		v0[i] = i
 	}
-
 	for i := 0; i < m; i++ {
 		v1[0] = i + 1
 		for j := 0; j < n; j++ {
