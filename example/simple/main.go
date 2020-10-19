@@ -4,7 +4,7 @@ import (
 	"fmt"
 	"strings"
 
-	radix "github.com/multiverse-os/cli/radix"
+	radix "../../../radix"
 )
 
 func main() {

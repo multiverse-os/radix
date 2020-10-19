@@ -13,6 +13,12 @@ import (
 // Subs is used to recurse over the tree only visiting nodes
 // which are directly under this node in the tree.
 
+// TODO: Store all data in Hashmap so it can be pulled. Then eventually when its
+// stored on disk or in mmap, then store the offfset.
+
+type NodeId int64
+type NodeValue []byte
+
 type terminate bool
 
 type NodeType int
@@ -31,13 +37,29 @@ func (self NodeType) String() string {
 	}
 }
 
+// TODO: I see other impelementations caching this data, but for now lets focus
+// on just having the data, and then we don't need to worry about ensuring the
+// data cache is accurate at CPU/speed cost; which can be remedied later.
+func (self Tree) Edges() (edges []*Node) {
+	for _, node := range self.Children {
+		if node.Type == Edge {
+			edges = append(edges, node)
+		}
+	}
+	return edges
+}
+
+func (self Tree) EdgeCount() int { return len(self.Edges()) }
+
 type Node struct {
 	Type     NodeType
 	Depth    int
 	Key      string
 	Parent   *Node
 	Children []*Node
-	Value    interface{}
+	Rank     int64       // TODO: Could be indicator of duplications
+	Value    interface{} // TODO: Using []byte we can use a binary -> struct conversion library to store entire objects and efficiently without resorting to this very generic anonymous interface which feels dangerous.
+	Subtree  *Tree
 }
 
 type ByteKeys []string

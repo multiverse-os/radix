@@ -2,58 +2,48 @@ package radix
 
 import (
 	"sync"
-
-	tree "github.com/multiverse-os/cli/text/tree"
 )
 
-// Terminology
-///////////////////////////////////////////////////////////////////////////////
-// Root: Base of the Tree data object with a depth of 0
-// Leaf: Terminal nodes at the edge of the tree object containing values
-// Branch: Inner nodes not containing values
-
-// TODO:TASKS:
-///////////////////////////////////////////////////////////////////////////////
-// * Add subtree isolation and ability to run commands, so you can search,
-// iterate, delete, a subtree
-// * Ability to delete a key
-// * Track all edges
-// * Use levestian to improve functionality
-//
-// Clone makes a copy of an existing trie.
-// Items stored in both tries become shared, obviously.
-
-// VisitSubtree works much like Visit, but it only visits nodes matching prefix.
+// TODO: All non-edge nodes technically are associated or are the root of a
+// subtree.
+// TODO: Need a solid way to build a tree from any node
+// TODO: Should probably have longest branch length
+//LongestBranch int
 
 type Tree struct {
-	//Size      int // Byte Size
 	mutex     *sync.RWMutex
 	Root      *Node
-	Keys      []string
-	Edges     []*Node
-	Nodes     []*Node
+	Children  []*Node
 	Height    int // Or MaxDepth
 	NodeCount int // Total
 }
 
+// TODO: Would prefer a proper build tree from node function
 func New() *Tree {
+	root := &Node{
+		Type:     Branch,
+		Depth:    -1,
+		Children: []*Node{},
+	}
 	return &Tree{
-		Root: &Node{
-			Type:     Branch,
-			Depth:    -1,
-			Children: []*Node{},
-		},
+		Root:      root,
 		mutex:     new(sync.RWMutex),
-		Keys:      []string{},
-		Edges:     []*Node{},
+		Children:  root.Children,
 		Height:    0,
 		NodeCount: 0,
 	}
 }
 
+func (self *Tree) Keys() (keys []string) {
+	for _, child := range self.Children {
+		keys = append(keys, child.Key)
+	}
+	return append(keys, self.Root.Key)
+}
+
 func (self *Tree) NodesAtDepth(depth int) []*Node {
 	nodes := []*Node{}
-	for _, node := range self.Nodes {
+	for _, node := range self.Children {
 		if node.Depth == depth {
 			nodes = append(nodes, node)
 		}
@@ -62,8 +52,8 @@ func (self *Tree) NodesAtDepth(depth int) []*Node {
 }
 
 func (self *Tree) KeyExists(key string) bool {
-	for _, existingKey := range self.Keys {
-		if existingKey == key {
+	for _, child := range self.Children {
+		if child.Key == key {
 			return true
 		}
 	}
@@ -90,8 +80,7 @@ func (self *Tree) Add(key string, value interface{}) *Node {
 			}
 		}
 		// NOTE: Cache
-		self.Nodes = append(self.Nodes, node)
-		self.Keys = append(self.Keys, key)
+		self.Children = append(self.Children, node)
 		return node
 	} else {
 		return nil
@@ -127,43 +116,54 @@ func (self *Node) add(key string, value interface{}) *Node {
 	return self.AddChild(key, value)
 }
 
-// TODO: Need to actually write a recursive function, this was just used for
-// development.
-func (self *Tree) String() string {
-	tree := tree.New()
-	for _, node := range self.Root.Children {
-		if node.Type == Edge {
-			tree.AddNode(node)
+func (self *Tree) AddEdge(node *Node) {
+	self.Children = append(self.Children, node)
+}
+
+// TODO: This is a gross function, needs recursive
+func (self *Tree) AddBranch(child *Node) (subtree *Tree) {
+	subtree = self.AddBranch(child)
+	for _, subchild := range child.Children {
+		if subchild.Type == Edge {
+			subtree.AddEdge(subchild)
 		} else {
-			branch := tree.AddBranch(node)
-			for _, child := range node.Children {
-				if child.Type == Edge {
-					branch.AddNode(child)
+			subtree = subtree.AddBranch(subchild)
+			for _, subchild := range subchild.Children {
+				if subchild.Type == Edge {
+					subtree.AddEdge(subchild)
 				} else {
-					subbranch := branch.AddBranch(child)
-					for _, subchild := range child.Children {
+					subtree = subtree.AddBranch(subchild)
+					for _, subchild := range subchild.Children {
 						if subchild.Type == Edge {
-							subbranch.AddNode(subchild)
+							subtree.AddEdge(subchild)
 						} else {
-							subsubbranch := subbranch.AddBranch(subchild)
-							for _, subsubchild := range subchild.Children {
-								if subsubchild.Type == Edge {
-									subsubbranch.AddNode(subsubchild)
-								} else {
-									subsubsubbranch := subsubbranch.AddBranch(subsubchild)
-									for _, subsubsubchild := range subsubchild.Children {
-										if subsubsubchild.Type == Edge {
-											subsubsubbranch.AddNode(subsubsubchild)
-										} else {
-											subsubsubbranch.AddBranch(subsubsubchild)
-										}
-									}
-								}
-							}
+							subtree.AddBranch(subchild)
 						}
 					}
 				}
 			}
+		}
+	}
+	return subtree
+}
+
+func (self *Node) IsBranch() bool { return len(self.Children) != 0 }
+func (self *Node) IsEdge() bool   { return len(self.Children) == 0 }
+
+// TODO: Need to actually write a recursive function, this was just used for
+// development.
+func (self *Tree) String() string {
+	tree := &Tree{}
+	for _, node := range self.Root.Children {
+		if node.IsBranch() {
+			tree = tree.AddBranch(node)
+			for _, child := range node.Children {
+				if child.IsEdge() {
+					tree.AddEdge(child)
+				}
+			}
+		} else {
+			tree.AddEdge(node)
 		}
 	}
 	return tree.String()

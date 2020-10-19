@@ -5,5 +5,5 @@ import (
 )
 
 var (
-	ErrIndexOutOfRange = errors.New("[cli/radix] index out of range of key length")
+	ErrorIndexOutOfRange = errors.New("index out of range of key length")
 )
